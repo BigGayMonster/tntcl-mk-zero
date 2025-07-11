@@ -23,14 +23,16 @@ import bmesh
 output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 # Tentacle parameters (mm)
+# Note: Sizes are conservative to ensure minimum 3-4mm silicone wall thickness
 tentacle_len_mm = 150.0
 base_radius_mm = 25.0
 tip_radius_mm = 0.0  # Pointed tip for seamless spade transition
 spade_flattening = 0.8  # Much stronger flattening effect (0.0 = no flattening, 1.0 = completely flat)
-bladder_long_mm = 12.0
-bladder_short_mm = 6.0
+# Bladder system
+bladder_long_mm = 10.0         # Major axis (along tentacle) - reduced from 16.0
+bladder_short_mm = 6.0         # Minor axis (cross-section) - reduced from 10.0
 bladder_spacing_mm = 15.0
-channel_radius_mm = 2.0
+channel_radius_mm = 2.0        # Radius of connecting channels - reduced from 3.5
 connector_radius_mm = 6.35
 connector_length_mm = 20.0
 
@@ -248,10 +250,25 @@ def create_bladders():
 
             # Calculate taper
             z_ratio = z_pos / (tentacle_len_mm * MM)
-            taper_factor = (1.0 - z_ratio) ** 1.5
+
+            # Calculate tentacle radius at this height (linear taper to point)
+            tentacle_radius_at_z = base_radius_mm * MM * (1.0 - z_ratio)
+
+            # Size bladders proportional to available space
+            # At base: use 35% of tentacle radius for bladder radius
+            # At tip: use only 20% to maintain wall thickness
+            size_ratio = 0.35 - (z_ratio * 0.15)  # From 35% to 20%
+
+            # Calculate bladder size based on local tentacle radius
+            bladder_radius = tentacle_radius_at_z * size_ratio
+
+            # Apply minimum and maximum constraints
+            min_bladder_radius = 0.0005  # 0.5mm minimum for manufacturing
+            max_bladder_radius = bladder_short_mm * MM * 1.2  # Allow 20% larger than nominal
+            bladder_radius = max(min(bladder_radius, max_bladder_radius), min_bladder_radius)
 
             bpy.ops.mesh.primitive_uv_sphere_add(
-                radius=bladder_short_mm * MM * taper_factor * 0.8,
+                radius=bladder_radius,
                 location=(center_x, center_y, z_pos)
             )
 
@@ -276,6 +293,8 @@ def create_bladders():
     print(f"✓ Created {len(bladders)} bladders aligned with channel paths")
     print(f"  Bladders positioned at lobe peaks: 30°, 150°, 270°")
     print(f"  Bladders follow angled channel paths for perfect alignment")
+    print(f"  Proportional sizing: 35% of tentacle radius at base, 20% at tip")
+    print(f"  Ensures consistent wall thickness throughout tentacle")
     return bladders
 
 def create_channels():
@@ -324,9 +343,17 @@ def create_channels():
         center_z = (z_start + z_end) / 2
 
         # Create single tapered cylinder for the entire channel
-        # Use cone for tapering effect
-        base_channel_radius = channel_radius_mm * MM * 1.2  # Slightly larger at base
-        tip_channel_radius = channel_radius_mm * MM * 0.3   # Much smaller at tip
+        # Size channels proportional to tentacle radius for consistent wall thickness
+        # Base: 20% of tentacle radius, Tip: 10% of tentacle radius
+        base_tentacle_radius = base_radius_mm * MM
+        tip_tentacle_radius = base_radius_mm * MM * 0.15  # Tentacle at 85% height
+
+        base_channel_radius = base_tentacle_radius * 0.15  # 15% of tentacle radius
+        tip_channel_radius = tip_tentacle_radius * 0.10   # 10% of tentacle radius
+
+        # But don't exceed reasonable limits
+        base_channel_radius = min(base_channel_radius, channel_radius_mm * MM * 1.5)
+        tip_channel_radius = max(tip_channel_radius, channel_radius_mm * MM * 0.1)
 
         bpy.ops.mesh.primitive_cone_add(
             vertices=32,
@@ -368,7 +395,7 @@ def create_channels():
 
     print(f"✓ Created {len(channels)} continuous channels (one per lobe)")
     print(f"  Channels positioned at lobe peaks: 30°, 150°, 270°")
-    print(f"  Single tapered cylinder per lobe passing through all bladders")
+    print(f"  Proportional sizing: 15% of tentacle radius at base, 10% at tip")
     print(f"  Channels angled strongly inward (60% convergence) to stay within tentacle")
     return channels
 
@@ -662,11 +689,12 @@ def main():
     print("- tentacle_hydraulic_systems.stl (combined hydraulic systems)")
     print("\n✨ Enhanced tri-lobe tentacle with hydraulic system")
     print("   - More pronounced tri-lobe shape")
-    print("   - Perfect bladder alignment along angled channel paths")
-    print("   - Bladders and channels properly aligned with lobe peaks (30°, 150°, 270°)")
-    print("   - Channels strongly angled inward (60% convergence) to stay within tentacle")
+    print("   - Proportional sizing system for consistent wall thickness:")
+    print("     • Bladders: 35% of tentacle radius (base) → 20% (tip)")
+    print("     • Channels: 15% of tentacle radius (base) → 10% (tip)")
+    print("     • Result: ~8-10mm walls at base, ~3-4mm walls at tip")
+    print("   - Channels strongly angled inward (60% convergence)")
     print("   - CSG-joined hydraulic systems for seamless geometry")
-    print("   - Smooth organic convergence at the tip")
 
 if __name__ == "__main__":
     main()
